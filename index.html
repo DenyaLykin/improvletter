@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Improv Letter MVP</title>
+    <style>
+      :root {
+        --bg: #000;
+        --fg: #fff;
+        --muted: rgba(255, 255, 255, 0.38);
+        --control-bg: rgba(255, 255, 255, 0.08);
+        --control-border: rgba(255, 255, 255, 0.22);
+        --control-fg: rgba(255, 255, 255, 0.88);
+      }
+
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--fg);
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+        font-family: "Arial Black", "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+
+      .stage {
+        position: fixed;
+        inset: 0;
+        background: #000;
+      }
+
+      .mode-badge {
+        position: absolute;
+        top: 14px;
+        right: 16px;
+        z-index: 5;
+        font-size: clamp(10px, 1.5vw, 14px);
+        letter-spacing: 0.12em;
+        opacity: 0.72;
+        font-weight: 700;
+      }
+
+      .previous-letter {
+        position: absolute;
+        left: clamp(12px, 3.2vw, 42px);
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: min(29vh, 23vw);
+        line-height: 1;
+        font-weight: 900;
+        color: var(--muted);
+        pointer-events: auto;
+        cursor: pointer;
+      }
+
+      .current-letter {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: min(67vh, 70vw);
+        line-height: 1;
+        font-weight: 900;
+        color: #fff;
+        text-align: center;
+        pointer-events: auto;
+        cursor: pointer;
+        transition: opacity 120ms linear;
+      }
+
+      .current-letter.is-hidden {
+        opacity: 0;
+      }
+
+      .controls {
+        position: fixed;
+        left: 50%;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 6;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border: 1px solid var(--control-border);
+        border-radius: 999px;
+        background: var(--control-bg);
+        backdrop-filter: blur(3px);
+        transition: opacity 140ms ease, transform 140ms ease;
+      }
+
+      .controls.is-hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 14px);
+      }
+
+      .controls-handle {
+        position: fixed;
+        left: 50%;
+        bottom: max(10px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 6;
+        min-width: 72px;
+        height: 20px;
+        border: 1px solid var(--control-border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        cursor: pointer;
+        opacity: 0.9;
+        transition: opacity 140ms ease, transform 140ms ease;
+      }
+
+      .controls-handle.is-hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, 8px);
+      }
+
+      .controls-hint {
+        position: fixed;
+        left: 50%;
+        bottom: max(34px, calc(env(safe-area-inset-bottom) + 24px));
+        transform: translateX(-50%);
+        z-index: 6;
+        font-size: clamp(9px, 1.2vw, 11px);
+        letter-spacing: 0.04em;
+        opacity: 0.68;
+        color: rgba(255, 255, 255, 0.78);
+        transition: opacity 200ms ease;
+        pointer-events: none;
+      }
+
+      .controls-hint.is-hidden {
+        opacity: 0;
+      }
+
+      .btn {
+        border: 1px solid var(--control-border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--control-fg);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        letter-spacing: 0.02em;
+      }
+
+      .btn:active {
+        transform: scale(0.98);
+      }
+
+      .mode-switch {
+        display: flex;
+        gap: 4px;
+      }
+
+      .mode-btn.active {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+
+      @media (max-width: 1024px) {
+        .current-letter {
+          font-size: min(65vh, 74vw);
+        }
+      }
+
+      @media (orientation: portrait) {
+        .current-letter {
+          font-size: min(56vh, 78vw);
+        }
+
+        .previous-letter {
+          font-size: min(22vh, 20vw);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stage" aria-live="polite">
+      <div id="modeBadge" class="mode-badge">EASY</div>
+      <div id="prevLetter" class="previous-letter"></div>
+      <div id="currentLetter" class="current-letter">А</div>
+
+      <div id="controls" class="controls is-hidden" aria-label="Панель управления">
+        <button id="nextBtn" class="btn" type="button">Следующая буква</button>
+        <button id="toggleBtn" class="btn" type="button">Скрыть</button>
+        <div class="mode-switch" role="group" aria-label="Режим сложности">
+          <button class="btn mode-btn active" type="button" data-mode="EASY">EASY</button>
+          <button class="btn mode-btn" type="button" data-mode="MEDIUM">MEDIUM</button>
+          <button class="btn mode-btn" type="button" data-mode="CHAOS">CHAOS</button>
+        </div>
+      </div>
+      <button
+        id="controlsHandle"
+        class="controls-handle"
+        type="button"
+        aria-label="Показать или скрыть управление"
+      >
+        МЕНЮ
+      </button>
+      <div id="controlsHint" class="controls-hint">Тап по МЕНЮ или двойной тап по фону</div>
+    </main>
+
+    <script>
+      "use strict";
+
+      // ===== 1) Массивы букв =====
+      const LETTER_SETS = {
+        EASY: "б в г д ж з к л м н п р с т ф х ц ч ш".toUpperCase().split(" "),
+        MEDIUM:
+          "б в г д ж з к л м н п р с т ф х ц ч ш а о е и н т р с л к м п д"
+            .toUpperCase()
+            .split(" "),
+        CHAOS:
+          "а б в г д е ж з и к л м н о п р с т у ф х ц ч ш щ ы э ю я"
+            .toUpperCase()
+            .split(" "),
+      };
+
+      // ===== 2) Логика колоды (Fisher-Yates + защита от дублей подряд) =====
+      function shuffleFisherYates(source) {
+        const arr = source.slice();
+        for (let i = arr.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      }
+
+      const deck = {
+        mode: "EASY",
+        cards: [],
+        index: 0,
+
+        reset(mode, avoidLetter = "") {
+          this.mode = mode;
+          this.cards = shuffleFisherYates(LETTER_SETS[mode]);
+          this.index = 0;
+          this.ensureFirstNot(avoidLetter);
+        },
+
+        ensureFirstNot(letter) {
+          if (!letter || this.cards.length < 2 || this.cards[0] !== letter) return;
+          const idx = this.cards.findIndex((ch) => ch !== letter);
+          if (idx > 0) {
+            [this.cards[0], this.cards[idx]] = [this.cards[idx], this.cards[0]];
+          }
+        },
+
+        draw(currentLetter) {
+          if (!this.cards.length) return "";
+
+          for (let guard = 0; guard < 8; guard += 1) {
+            if (this.index >= this.cards.length) {
+              this.cards = shuffleFisherYates(LETTER_SETS[this.mode]);
+              this.index = 0;
+              this.ensureFirstNot(currentLetter);
+            }
+
+            if (this.cards[this.index] !== currentLetter) {
+              const letter = this.cards[this.index];
+              this.index += 1;
+              return letter;
+            }
+
+            let swapIndex = -1;
+            for (let i = this.index + 1; i < this.cards.length; i += 1) {
+              if (this.cards[i] !== currentLetter) {
+                swapIndex = i;
+                break;
+              }
+            }
+
+            if (swapIndex !== -1) {
+              [this.cards[this.index], this.cards[swapIndex]] = [
+                this.cards[swapIndex],
+                this.cards[this.index],
+              ];
+              const letter = this.cards[this.index];
+              this.index += 1;
+              return letter;
+            }
+
+            this.cards = shuffleFisherYates(LETTER_SETS[this.mode]);
+            this.index = 0;
+            this.ensureFirstNot(currentLetter);
+          }
+
+          const fallback = this.cards[this.index] || "";
+          this.index += 1;
+          return fallback;
+        },
+      };
+
+      // ===== 3) Управление состоянием =====
+      const state = {
+        mode: "EASY",
+        currentLetter: "",
+        previousLetter: "",
+        isCurrentVisible: true,
+        areControlsVisible: false,
+        showControlsHint: true,
+      };
+
+      function nextLetter() {
+        const next = deck.draw(state.currentLetter);
+        if (!next) return;
+        state.previousLetter = state.currentLetter;
+        state.currentLetter = next;
+        state.isCurrentVisible = true;
+        render();
+      }
+
+      function setMode(mode) {
+        if (!LETTER_SETS[mode]) return;
+        state.mode = mode;
+        deck.reset(mode, state.currentLetter);
+        nextLetter();
+      }
+
+      function toggleCurrentVisibility() {
+        state.isCurrentVisible = !state.isCurrentVisible;
+        render();
+      }
+
+      function backToPreviousLetter() {
+        if (!state.previousLetter) return;
+        const current = state.currentLetter;
+        state.currentLetter = state.previousLetter;
+        state.previousLetter = current;
+        state.isCurrentVisible = true;
+        render();
+      }
+
+      function toggleControls(forceValue) {
+        if (typeof forceValue === "boolean") {
+          state.areControlsVisible = forceValue;
+        } else {
+          state.areControlsVisible = !state.areControlsVisible;
+        }
+        state.showControlsHint = false;
+        render();
+      }
+
+      // ===== 4) UI =====
+      const ui = {
+        currentLetter: document.getElementById("currentLetter"),
+        prevLetter: document.getElementById("prevLetter"),
+        modeBadge: document.getElementById("modeBadge"),
+        controls: document.getElementById("controls"),
+        controlsHandle: document.getElementById("controlsHandle"),
+        controlsHint: document.getElementById("controlsHint"),
+        nextBtn: document.getElementById("nextBtn"),
+        toggleBtn: document.getElementById("toggleBtn"),
+        modeButtons: Array.from(document.querySelectorAll(".mode-btn")),
+      };
+
+      function render() {
+        ui.currentLetter.textContent = state.currentLetter;
+        ui.prevLetter.textContent = state.previousLetter;
+        ui.modeBadge.textContent = state.mode;
+        ui.toggleBtn.textContent = state.isCurrentVisible ? "Скрыть" : "Показать";
+
+        ui.currentLetter.classList.toggle("is-hidden", !state.isCurrentVisible);
+        ui.controls.classList.toggle("is-hidden", !state.areControlsVisible);
+        ui.controlsHandle.classList.toggle("is-hidden", state.areControlsVisible);
+        ui.controlsHint.classList.toggle("is-hidden", !state.showControlsHint);
+
+        ui.modeButtons.forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.mode === state.mode);
+        });
+      }
+
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
+        } else if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
+
+      ui.nextBtn.addEventListener("click", nextLetter);
+      ui.toggleBtn.addEventListener("click", toggleCurrentVisibility);
+      ui.modeButtons.forEach((btn) => {
+        btn.addEventListener("click", () => setMode(btn.dataset.mode));
+      });
+      ui.controlsHandle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleControls();
+      });
+      ui.currentLetter.addEventListener("click", (event) => {
+        event.stopPropagation();
+        nextLetter();
+      });
+      ui.prevLetter.addEventListener("click", (event) => {
+        event.stopPropagation();
+        backToPreviousLetter();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        const key = event.key;
+        const lower = key.toLowerCase();
+
+        if (key === " " || key === "Spacebar") {
+          event.preventDefault();
+          nextLetter();
+          return;
+        }
+
+        if (lower === "h") {
+          toggleCurrentVisibility();
+          return;
+        }
+
+        if (lower === "f") {
+          toggleFullscreen();
+          return;
+        }
+
+        if (key === "1") setMode("EASY");
+        if (key === "2") setMode("MEDIUM");
+        if (key === "3") setMode("CHAOS");
+      });
+
+      // Двойной тап/клик для показа или скрытия панели управления.
+      let lastTouchTime = 0;
+      document.addEventListener(
+        "touchend",
+        (event) => {
+          if (
+            event.target.closest(
+              ".controls, .controls-handle, .current-letter, .previous-letter"
+            )
+          ) {
+            return;
+          }
+          const now = Date.now();
+          if (now - lastTouchTime < 320) {
+            toggleControls();
+            event.preventDefault();
+          }
+          lastTouchTime = now;
+        },
+        { passive: false }
+      );
+
+      document.addEventListener("dblclick", (event) => {
+        if (
+          event.target.closest(".controls, .controls-handle, .current-letter, .previous-letter")
+        ) {
+          return;
+        }
+        toggleControls();
+      });
+
+      // UX-ограничения: без скролла, выделения и контекстного меню.
+      document.addEventListener("contextmenu", (event) => event.preventDefault());
+      document.addEventListener("selectstart", (event) => event.preventDefault());
+      window.addEventListener(
+        "wheel",
+        (event) => event.preventDefault(),
+        { passive: false }
+      );
+      window.addEventListener(
+        "touchmove",
+        (event) => event.preventDefault(),
+        { passive: false }
+      );
+
+      // Инициализация.
+      deck.reset(state.mode);
+      nextLetter();
+      setTimeout(() => {
+        state.showControlsHint = false;
+        render();
+      }, 6000);
+    </script>
+  </body>
+</html>
