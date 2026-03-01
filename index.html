@@ -173,9 +173,36 @@
         gap: 4px;
       }
 
+      .type-switch {
+        display: flex;
+        gap: 4px;
+      }
+
       .mode-btn.active {
         background: rgba(255, 255, 255, 0.16);
         color: #fff;
+      }
+
+      .type-btn.active {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+      }
+
+      .current-letter.is-action {
+        max-width: 80vw;
+        white-space: normal;
+        word-break: break-word;
+        line-height: 1.2;
+        font-size: min(12vh, 8vw);
+        text-align: center;
+      }
+
+      .previous-letter.is-action {
+        max-width: 24vw;
+        white-space: normal;
+        word-break: break-word;
+        line-height: 1.2;
+        font-size: min(7vh, 4.6vw);
       }
 
       @media (max-width: 1024px) {
@@ -192,19 +219,32 @@
         .previous-letter {
           font-size: min(22vh, 20vw);
         }
+
+        .current-letter.is-action {
+          font-size: min(9.5vh, 8.6vw);
+        }
+
+        .previous-letter.is-action {
+          max-width: 30vw;
+          font-size: min(5.2vh, 4.3vw);
+        }
       }
     </style>
   </head>
   <body>
     <main class="stage" aria-live="polite">
-      <div id="modeBadge" class="mode-badge">EASY</div>
+      <div id="modeBadge" class="mode-badge">LETTER | EASY</div>
       <div id="prevLetter" class="previous-letter"></div>
       <div id="currentLetter" class="current-letter">А</div>
 
       <div id="controls" class="controls is-hidden" aria-label="Панель управления">
         <button id="nextBtn" class="btn" type="button">Следующая буква</button>
         <button id="toggleBtn" class="btn" type="button">Скрыть</button>
-        <div class="mode-switch" role="group" aria-label="Режим сложности">
+        <div class="type-switch" role="group" aria-label="Тип режима">
+          <button class="btn type-btn active" type="button" data-type="LETTER">LETTER</button>
+          <button class="btn type-btn" type="button" data-type="ACTION">ACTION</button>
+        </div>
+        <div id="modeSwitch" class="mode-switch" role="group" aria-label="Режим сложности">
           <button class="btn mode-btn active" type="button" data-mode="EASY">EASY</button>
           <button class="btn mode-btn" type="button" data-mode="MEDIUM">MEDIUM</button>
           <button class="btn mode-btn" type="button" data-mode="CHAOS">CHAOS</button>
@@ -224,7 +264,7 @@
     <script>
       "use strict";
 
-      // ===== 1) Массивы букв =====
+      // ===== 1) Наборы данных =====
       const LETTER_SETS = {
         EASY: "б в г д ж з к л м н п р с т ф х ц ч ш".toUpperCase().split(" "),
         MEDIUM:
@@ -237,7 +277,24 @@
             .split(" "),
       };
 
-      // ===== 2) Логика колоды (Fisher-Yates + защита от дублей подряд) =====
+      function createAction(base) {
+        return { base };
+      }
+
+      const ACTION_SET = [
+        createAction("говорить громко"),
+        createAction("смотреть в глаза"),
+        createAction("перебивать"),
+        createAction("смеяться"),
+        createAction("использовать руки"),
+        createAction("двигаться"),
+        createAction("задавать вопросы"),
+        createAction("соглашаться"),
+        createAction("спорить"),
+        createAction("молчать"),
+      ];
+
+      // ===== 2) Универсальная логика колоды =====
       function shuffleFisherYates(source) {
         const arr = source.slice();
         for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -247,95 +304,179 @@
         return arr;
       }
 
-      const deck = {
-        mode: "EASY",
-        cards: [],
-        index: 0,
+      function createDeck(getSource, getId) {
+        return {
+          mode: "EASY",
+          cards: [],
+          index: 0,
 
-        reset(mode, avoidLetter = "") {
-          this.mode = mode;
-          this.cards = shuffleFisherYates(LETTER_SETS[mode]);
-          this.index = 0;
-          this.ensureFirstNot(avoidLetter);
-        },
-
-        ensureFirstNot(letter) {
-          if (!letter || this.cards.length < 2 || this.cards[0] !== letter) return;
-          const idx = this.cards.findIndex((ch) => ch !== letter);
-          if (idx > 0) {
-            [this.cards[0], this.cards[idx]] = [this.cards[idx], this.cards[0]];
-          }
-        },
-
-        draw(currentLetter) {
-          if (!this.cards.length) return "";
-
-          for (let guard = 0; guard < 8; guard += 1) {
-            if (this.index >= this.cards.length) {
-              this.cards = shuffleFisherYates(LETTER_SETS[this.mode]);
-              this.index = 0;
-              this.ensureFirstNot(currentLetter);
-            }
-
-            if (this.cards[this.index] !== currentLetter) {
-              const letter = this.cards[this.index];
-              this.index += 1;
-              return letter;
-            }
-
-            let swapIndex = -1;
-            for (let i = this.index + 1; i < this.cards.length; i += 1) {
-              if (this.cards[i] !== currentLetter) {
-                swapIndex = i;
-                break;
-              }
-            }
-
-            if (swapIndex !== -1) {
-              [this.cards[this.index], this.cards[swapIndex]] = [
-                this.cards[swapIndex],
-                this.cards[this.index],
-              ];
-              const letter = this.cards[this.index];
-              this.index += 1;
-              return letter;
-            }
-
-            this.cards = shuffleFisherYates(LETTER_SETS[this.mode]);
+          reset(mode, avoidId = "") {
+            this.mode = mode;
+            this.cards = shuffleFisherYates(getSource(mode));
             this.index = 0;
-            this.ensureFirstNot(currentLetter);
-          }
+            this.ensureFirstNot(avoidId);
+          },
 
-          const fallback = this.cards[this.index] || "";
-          this.index += 1;
-          return fallback;
-        },
-      };
+          ensureFirstNot(avoidId) {
+            if (!avoidId || this.cards.length < 2 || getId(this.cards[0]) !== avoidId) return;
+            const idx = this.cards.findIndex((item) => getId(item) !== avoidId);
+            if (idx > 0) {
+              [this.cards[0], this.cards[idx]] = [this.cards[idx], this.cards[0]];
+            }
+          },
+
+          draw(currentId = "") {
+            if (!this.cards.length) return null;
+
+            for (let guard = 0; guard < 8; guard += 1) {
+              if (this.index >= this.cards.length) {
+                this.cards = shuffleFisherYates(getSource(this.mode));
+                this.index = 0;
+                this.ensureFirstNot(currentId);
+              }
+
+              const card = this.cards[this.index];
+              if (getId(card) !== currentId) {
+                this.index += 1;
+                return card;
+              }
+
+              let swapIndex = -1;
+              for (let i = this.index + 1; i < this.cards.length; i += 1) {
+                if (getId(this.cards[i]) !== currentId) {
+                  swapIndex = i;
+                  break;
+                }
+              }
+
+              if (swapIndex !== -1) {
+                [this.cards[this.index], this.cards[swapIndex]] = [
+                  this.cards[swapIndex],
+                  this.cards[this.index],
+                ];
+                const swappedCard = this.cards[this.index];
+                this.index += 1;
+                return swappedCard;
+              }
+
+              this.cards = shuffleFisherYates(getSource(this.mode));
+              this.index = 0;
+              this.ensureFirstNot(currentId);
+            }
+
+            const fallback = this.cards[this.index] || null;
+            this.index += 1;
+            return fallback;
+          },
+        };
+      }
+
+      const letterDeck = createDeck((mode) => LETTER_SETS[mode], (card) => card);
+      const actionDeck = createDeck(() => ACTION_SET, (card) => card.base);
 
       // ===== 3) Управление состоянием =====
       const state = {
         mode: "EASY",
-        currentLetter: "",
-        previousLetter: "",
+        type: "LETTER",
+        currentValue: "",
+        previousValue: "",
+        currentCardId: "",
+        previousCardId: "",
         isCurrentVisible: true,
         areControlsVisible: false,
         showControlsHint: true,
       };
 
-      function nextLetter() {
-        const next = deck.draw(state.currentLetter);
-        if (!next) return;
-        state.previousLetter = state.currentLetter;
-        state.currentLetter = next;
+      const typedState = {
+        LETTER: {
+          currentValue: "",
+          previousValue: "",
+          currentCardId: "",
+          previousCardId: "",
+        },
+        ACTION: {
+          currentValue: "",
+          previousValue: "",
+          currentCardId: "",
+          previousCardId: "",
+        },
+      };
+
+      function saveActiveTypedState() {
+        const target = typedState[state.type];
+        target.currentValue = state.currentValue;
+        target.previousValue = state.previousValue;
+        target.currentCardId = state.currentCardId;
+        target.previousCardId = state.previousCardId;
+      }
+
+      function loadTypedState(type) {
+        const source = typedState[type];
+        state.currentValue = source.currentValue;
+        state.previousValue = source.previousValue;
+        state.currentCardId = source.currentCardId;
+        state.previousCardId = source.previousCardId;
+      }
+
+      function drawLetter() {
+        const letter = letterDeck.draw(state.currentCardId);
+        if (!letter) return null;
+        return { id: letter, value: letter };
+      }
+
+      function generateAction() {
+        const primary = actionDeck.draw(state.currentCardId);
+        if (!primary) return null;
+
+        return { id: primary.base, value: `Нельзя ${primary.base}` };
+      }
+
+      function drawAction() {
+        return generateAction();
+      }
+
+      function nextValue() {
+        const drawn = state.type === "LETTER" ? drawLetter() : drawAction();
+        if (!drawn) return;
+
+        state.previousValue = state.currentValue;
+        state.previousCardId = state.currentCardId;
+        state.currentValue = drawn.value;
+        state.currentCardId = drawn.id;
         state.isCurrentVisible = true;
+
+        saveActiveTypedState();
         render();
       }
 
       function setMode(mode) {
         if (!LETTER_SETS[mode]) return;
         state.mode = mode;
-        deck.reset(mode, state.currentLetter);
-        nextLetter();
+
+        letterDeck.reset(mode, typedState.LETTER.currentCardId);
+        if (state.type === "LETTER") {
+          nextValue();
+          return;
+        }
+
+        render();
+      }
+
+      function setType(type) {
+        if (!typedState[type]) return;
+        if (state.type === type) return;
+
+        saveActiveTypedState();
+        state.type = type;
+        loadTypedState(type);
+        state.isCurrentVisible = true;
+
+        if (!state.currentValue) {
+          nextValue();
+          return;
+        }
+
+        render();
       }
 
       function toggleCurrentVisibility() {
@@ -343,12 +484,18 @@
         render();
       }
 
-      function backToPreviousLetter() {
-        if (!state.previousLetter) return;
-        const current = state.currentLetter;
-        state.currentLetter = state.previousLetter;
-        state.previousLetter = current;
+      function backToPreviousValue() {
+        if (!state.previousValue) return;
+        const currentValue = state.currentValue;
+        const currentId = state.currentCardId;
+
+        state.currentValue = state.previousValue;
+        state.currentCardId = state.previousCardId;
+        state.previousValue = currentValue;
+        state.previousCardId = currentId;
         state.isCurrentVisible = true;
+
+        saveActiveTypedState();
         render();
       }
 
@@ -367,27 +514,40 @@
         currentLetter: document.getElementById("currentLetter"),
         prevLetter: document.getElementById("prevLetter"),
         modeBadge: document.getElementById("modeBadge"),
+        modeSwitch: document.getElementById("modeSwitch"),
         controls: document.getElementById("controls"),
         controlsHandle: document.getElementById("controlsHandle"),
         controlsHint: document.getElementById("controlsHint"),
         nextBtn: document.getElementById("nextBtn"),
         toggleBtn: document.getElementById("toggleBtn"),
         modeButtons: Array.from(document.querySelectorAll(".mode-btn")),
+        typeButtons: Array.from(document.querySelectorAll(".type-btn")),
       };
 
       function render() {
-        ui.currentLetter.textContent = state.currentLetter;
-        ui.prevLetter.textContent = state.previousLetter;
-        ui.modeBadge.textContent = state.mode;
+        ui.currentLetter.textContent = state.currentValue;
+        ui.prevLetter.textContent = state.previousValue;
+        ui.modeBadge.textContent =
+          state.type === "LETTER" ? `${state.type} | ${state.mode}` : state.type;
         ui.toggleBtn.textContent = state.isCurrentVisible ? "Скрыть" : "Показать";
+        ui.nextBtn.textContent =
+          state.type === "LETTER" ? "Следующая буква" : "Следующее действие";
 
+        const isAction = state.type === "ACTION";
+        ui.modeSwitch.style.display = isAction ? "none" : "flex";
         ui.currentLetter.classList.toggle("is-hidden", !state.isCurrentVisible);
+        ui.currentLetter.classList.toggle("is-action", isAction);
+        ui.prevLetter.classList.toggle("is-action", isAction);
         ui.controls.classList.toggle("is-hidden", !state.areControlsVisible);
         ui.controlsHandle.classList.toggle("is-hidden", state.areControlsVisible);
         ui.controlsHint.classList.toggle("is-hidden", !state.showControlsHint);
 
         ui.modeButtons.forEach((btn) => {
           btn.classList.toggle("active", btn.dataset.mode === state.mode);
+        });
+
+        ui.typeButtons.forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.type === state.type);
         });
       }
 
@@ -401,10 +561,13 @@
         }
       }
 
-      ui.nextBtn.addEventListener("click", nextLetter);
+      ui.nextBtn.addEventListener("click", nextValue);
       ui.toggleBtn.addEventListener("click", toggleCurrentVisibility);
       ui.modeButtons.forEach((btn) => {
         btn.addEventListener("click", () => setMode(btn.dataset.mode));
+      });
+      ui.typeButtons.forEach((btn) => {
+        btn.addEventListener("click", () => setType(btn.dataset.type));
       });
       ui.controlsHandle.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -412,11 +575,11 @@
       });
       ui.currentLetter.addEventListener("click", (event) => {
         event.stopPropagation();
-        nextLetter();
+        nextValue();
       });
       ui.prevLetter.addEventListener("click", (event) => {
         event.stopPropagation();
-        backToPreviousLetter();
+        backToPreviousValue();
       });
 
       document.addEventListener("keydown", (event) => {
@@ -425,7 +588,7 @@
 
         if (key === " " || key === "Spacebar") {
           event.preventDefault();
-          nextLetter();
+          nextValue();
           return;
         }
 
@@ -439,9 +602,21 @@
           return;
         }
 
-        if (key === "1") setMode("EASY");
-        if (key === "2") setMode("MEDIUM");
-        if (key === "3") setMode("CHAOS");
+        if (lower === "l") {
+          setType("LETTER");
+          return;
+        }
+
+        if (lower === "a") {
+          setType("ACTION");
+          return;
+        }
+
+        if (state.type !== "ACTION") {
+          if (key === "1") setMode("EASY");
+          if (key === "2") setMode("MEDIUM");
+          if (key === "3") setMode("CHAOS");
+        }
       });
 
       // Двойной тап/клик для показа или скрытия панели управления.
@@ -490,8 +665,9 @@
       );
 
       // Инициализация.
-      deck.reset(state.mode);
-      nextLetter();
+      letterDeck.reset(state.mode);
+      actionDeck.reset("EASY");
+      nextValue();
       setTimeout(() => {
         state.showControlsHint = false;
         render();
